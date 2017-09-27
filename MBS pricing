@@ -1,0 +1,54 @@
+##project 9
+##question2
+MBS_psa=function(kappa){
+    T=30; wac=0.08; pv0=100000; 
+    r0=0.078; sigma=0.12 
+    r=wac/12; N=T*12; 
+    rmean=0.08#;kappa=0.6;
+    
+    disct=function(t,T,rt){
+        h1=sqrt(kappa^2+2*sigma^2)
+        h2=0.5*(kappa+h1)
+        h3=2*kappa*rmean/(sigma^2)
+        A=( h1*exp(h2*(T-t))/(h2*( exp(h1*(T-t))-1 )+h1) )^h3
+        B=(exp(h1*(T-t))-1)/( h2*(exp(h1*(T-t))-1)+h1)
+        p=A*exp(-B*rt)
+        return(p)
+    }
+    #model CPR t 
+    CPR=matrix(NA,nrow=1, ncol=N+1); CPR[1]=0
+    for (i in 2:(N+1)){
+        CPR[i]=ifelse(i<=31, CPR[i-1]+0.002, CPR[i-1])
+    }
+    
+    pv=matrix(NA,ncol = T*12+1, nrow=1)
+    pv[1]=pv0
+    cf=matrix(NA,ncol = T*12,nrow=1)
+    sp=matrix(NA,ncol = T*12,nrow=1)
+    pp=matrix(NA,ncol = T*12,nrow=1)
+    tpp=matrix(NA,ncol = T*12,nrow=1)
+    for (i in 2:(T*12+1)){
+        t=i-1
+        temp=1-1/(1+r)^(N-t+1)
+        mp=pv[i-1]*r/temp
+        ip=pv[i-1]*r
+        
+        sp[i-1]=mp-ip
+        pp[i-1]=(pv[i-1]-sp[i-1])*(1-(1-CPR[i])^(1/12))
+        
+        tpp[i-1]=sp[i-1]+pp[i-1]
+        pv[i]=pv[i-1]-tpp[i-1]
+        cf[i-1]=mp+pp[i-1]
+    }
+    discountrate=mapply(function(x) disct(0,x,r0), seq(1/12, T, 1/12))
+    price=sum(discountrate*cf)
+    return(price)
+}
+
+MBS_psa(kappa=0.6)
+
+price_2b=mapply(function(x) MBS_psa(x), seq(0.3,0.9,0.1))
+plot(seq(0.3,0.9,0.1), price_2b,type="l",xlab = "kappa",ylab = "price", main="MBS price")
+
+
+
