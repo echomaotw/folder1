@@ -1,0 +1,282 @@
+setwd("C:/Users/echom/OneDrive/UCLA/2nd quarter/237 E empirical methods in Finance/HWK4")
+
+#question 1
+FF5<-read.csv("FF5.csv",head=T,skip = 3,nrows = 642)
+colnames(FF5)[1]<-"Date"
+FF5<-FF5[which(FF5$Date>=196307 & FF5$Date<=201512),]
+
+B2M<-read.csv("Portfolios_Formed_on_BE-ME.csv",head=T,skip = 23,nrows = 1086)
+colnames(B2M)[1]<-"Date"
+B2M<-B2M[which(B2M$Date>=196307 & B2M$Date<=201512),]
+B2M<-B2M[,6:10]
+B2M$RF<-cbind(FF5$RF)
+B2M[,1:5]<-B2M[,1:5]-B2M[,"RF"]
+B2M<-B2M[,-length(B2M)]
+
+
+MKTBETA<-read.csv("Portfolios_Formed_on_BETA.csv",head=T,skip = 15,nrows = 642)
+colnames(MKTBETA)[1]<-"Date"
+MKTBETA<-MKTBETA[which(MKTBETA$Date>=196307 & MKTBETA$Date<=201512),]
+MKTBETA<-MKTBETA[,2:6]
+MKTBETA$RF<-cbind(FF5$RF)
+MKTBETA[,1:5]<-MKTBETA[,1:5]-MKTBETA[,"RF"]
+MKTBETA<-MKTBETA[,-length(MKTBETA)]
+
+
+INV<-read.csv("Portfolios_Formed_on_INV.csv",head=T,skip = 17,nrows = 642)
+colnames(INV)[1]<-"Date"
+INV<-INV[which(INV$Date>=196307 & INV$Date<=201512),]
+INV<-INV[,5:9]
+INV$RF<-cbind(FF5$RF)
+INV[,1:5]<-INV[,1:5]-INV[,"RF"]
+INV<-INV[,-length(INV)]
+
+
+SIZE<-read.csv("Portfolios_Formed_on_ME.csv",head=T,skip = 12,nrows = 1086)
+colnames(SIZE)[1]<-"Date"
+SIZE<-SIZE[which(SIZE$Date>=196307 & SIZE$Date<=201512),]
+SIZE<-SIZE[,6:10]
+SIZE$RF<-cbind(FF5$RF)
+SIZE[,1:5]<-SIZE[,1:5]-SIZE[,"RF"]
+SIZE<-SIZE[,-length(SIZE)]
+
+
+OP<-read.csv("Portfolios_Formed_on_OP.csv",head=T,skip = 18,nrows = 642)
+colnames(OP)[1]<-"Date"
+OP<-OP[which(OP$Date>=196307 & OP$Date<=201512),]
+OP<-OP[,5:9]
+OP$RF<-cbind(FF5$RF)
+OP[,1:5]<-OP[,1:5]-OP[,"RF"]
+OP<-OP[,-length(OP)]
+
+#combine 25 assets
+colnames(B2M)[1:5]<-paste("B2M_qt",1:5,sep = "")
+colnames(INV)[1:5]<-paste("INV_qt",1:5,sep = "")
+colnames(MKTBETA)[1:5]<-paste("MKTBETA_qt",1:5,sep = "")
+colnames(OP)[1:5]<-paste("OP_qt",1:5,sep = "")
+colnames(SIZE)[1:5]<-paste("SIZE_qt",1:5,sep = "")
+ASSETS_1<-cbind(B2M[,1:5],INV[,1:5],MKTBETA[,1:5],OP[,1:5],SIZE[,1:5])
+
+#estimating betas for the 30 assets, run time series regression
+beta_1<-matrix(nrow = 25,ncol = 6) 
+colnames(beta_1)[1]<-'intcp'
+colnames(beta_1)[2:6]<-colnames(FF5[2:6])
+rownames(beta_1)<-colnames(ASSETS_1[1:25])
+resi_1<-matrix(nrow=630,ncol=25)
+
+for (i in 1:25){
+  out<-lm(ASSETS_1[,i]~FF5$Mkt.RF+FF5$SMB+FF5$HML+FF5$RMW+FF5$CMA+FF5$CMA)
+  beta_1[i,]<-out$coefficients[1:6]
+  resi_1[,i]<-out$residuals
+}
+
+#test if alphas are jointly 0
+#asymptotic  chi-square test
+varcov.f_1<-var(FF5[,2:6])
+mean.factor<-colMeans(FF5[,2:6])
+sr.f.sq_1<-t(mean.factor)%*%chol2inv(chol(varcov.f_1))%*%mean.factor
+#mean.act_1<-colMeans(ASSETS_1)
+#varcov.r_1<-var(ASSETS_1)
+
+alpha<-as.vector(beta_1[,1])
+varcov.resi_1<-var(resi_1)
+t.chi_1<-t(alpha)%*%chol2inv(chol(varcov.resi_1))%*%alpha*630/(1+sr.f.sq_1)
+t.chi_1
+#55.0832
+qchisq(0.99,df=25)
+#44.3
+#because t statistic is greater than 95% chi square statistic, we reject the null hypothesis and conclude that 
+#aplha is not 0 for all assets
+
+
+#F-test
+t.f<-t(alpha)%*%solve(varcov.resi_1)%*%alpha/(1+sr.f.sq_1)*(630-25-5)/25
+t.f
+#2.1124 without GRS adjustment
+#2.09841 with GRS adjustment
+
+
+qf(0.99,df1=25,df2=630-25-5)
+#with GRS adjustment=1.804
+#pf(t.f,df1=25,df2=630-25-1)
+#F test value is greater than 95% F test statistic,thus we reject the null hypothesis and conclude that
+#alpha jointly is not 0
+
+
+
+
+#question 2
+#OLS cross sectional regression
+beta_1<-as.data.frame(beta_1)
+OLS_1<-lm(mean.act~beta_1$Mkt.RF+beta_1$SMB+beta_1$HML+beta_1$RMW+beta_1$CMA)
+OLS_coef<-OLS_1$coefficients
+OLS_coef
+varcov.f.intcpt<-matrix(0,ncol=6,nrow=6)
+varcov.f.intcpt[1,1]<-var(alpha)
+varcov.f.intcpt[c(2:6),c(2:6)]<-var(FF5[2:6])
+
+
+#OLS standard error
+beta_1<-as.matrix(beta_1)
+OLS.varcov.lambda<-(chol2inv(chol(crossprod(beta_1)))%*%t(beta_1)%*%varcov.resi_1%*%beta_1%*%chol2inv(chol(crossprod(beta_1)))+varcov.f.intcpt)/630
+OLS.std.lambda<-sqrt(diag(OLS.varcov.lambda))
+OLS.std.lambda
+
+9325*(10/100)+(37950-9325) * (15/100)+(91900-37950) * (25/100)+(190165-91900) * (28/100)+(416700-191650) * (33/100)+(418400-416700) * (35/100)+(1000000-418400) *(39.6/100)
+
+
+#Fama McBeth regression
+ASSETS_T<-t(ASSETS_1)
+ASSETS_T<-as.data.frame(ASSETS_T)
+
+riskpricing<-matrix(nrow=630,ncol = 6)
+colnames(riskpricing)[1]<-"intcpt"
+colnames(riskpricing)[2:6]<-colnames(FF5)[2:6]
+for (j in 1:630){
+  temp<-lm(ASSETS_T[,j]~beta_1$Mkt.RF+beta_1$SMB+beta_1$HML+beta_1$RMW+beta_1$CMA)
+  riskpricing[j,]<-temp$coefficients
+}
+
+riskpricingmean<-colMeans(riskpricing)
+riskpricingmean
+OLS_coef
+riskpricingstd<-sqrt(diag(var(riskpricing)))
+
+mean.act<-colMeans(ASSETS)
+beta<-cbind(rep(1,30),beta)
+mean.pred<-as.matrix(beta)%*%as.vector(riskpricingmean)
+R.sq<-1-var(mean.act-mean.pred)/var(mean.act)
+R.sq
+
+
+rm(beta,out,R.sq,riskpricingmean,mean.act,mean.pred,i,j,temp,riskpricing)
+
+
+
+
+
+
+
+
+
+
+#DATA LOADING AND EXCESS RETURN GENERATION
+
+MOM<-read.csv("Momentum.csv",head=T,skip = 10,nrows = 1080)
+colnames(MOM)[1]<-"Date"
+colnames(MOM)[2]<-"PRIOR.1"
+colnames(MOM)[11]<-"PRIOR.10"
+MOM<-MOM[which(MOM$Date>=196307 & MOM$Date<=201512),]
+MOM$RF<-cbind(FF5$RF)
+MOM[,2:11]<-MOM[,2:11]-MOM[,"RF"]
+MOM<-MOM[,-length(MOM)]
+
+NI<-read.csv("NI.csv",head=T,skip = 16,nrows = 642)
+NI<-NI[,c(1,4,5,6,7,8)]
+colnames(NI)[1]<-"Date"
+colnames(NI)[2]<-"Qnt.1"
+colnames(NI)[6]<-"Qnt.5"
+NI<-NI[which(NI$Date>=196307 & NI$Date<=201512),]
+NI$RF<-cbind(FF5$RF)
+NI[,2:(length(NI)-1)]<-NI[,2:(length(NI)-1)]-NI[,"RF"]
+NI<-NI[,-length(NI)]
+
+RESVAR<-read.csv("RESVAR.csv",head=T,skip = 16,nrows = 642)
+RESVAR<-RESVAR[,c(1:6)]
+colnames(RESVAR)[1]<-"Date"
+colnames(RESVAR)[2]<-"Qnt.1"
+colnames(RESVAR)[6]<-"Qnt.5"
+RESVAR<-RESVAR[which(RESVAR$Date>=196307 & RESVAR$Date<=201512),]
+RESVAR$RF<-cbind(FF5$RF)
+RESVAR[,2:(length(RESVAR)-1)]<-RESVAR[,2:(length(RESVAR)-1)]-RESVAR[,"RF"]
+RESVAR<-RESVAR[,-length(RESVAR)]
+
+INDUSTRY<-read.csv("10_Industry.csv",head=T,skip = 11,nrows = 1086)
+colnames(INDUSTRY)[1]<-"Date"
+INDUSTRY<-INDUSTRY[which(INDUSTRY$Date>=196307 & INDUSTRY$Date<=201512),]
+INDUSTRY$RF<-cbind(FF5$RF)
+INDUSTRY[,2:(length(INDUSTRY)-1)]<-INDUSTRY[,2:(length(INDUSTRY)-1)]-INDUSTRY[,"RF"]
+INDUSTRY<-INDUSTRY[,-length(INDUSTRY)]
+
+#combine 30 assets
+colnames(NI)[2:6]<-paste("NI_qt",1:5,sep = "")
+colnames(RESVAR)[2:6]<-paste("RESVAR_qt",1:5,sep = "")
+colnames(MOM)[2:11]<-paste("MOM_qt",1:10,sep = "")
+ASSETS<-cbind(INDUSTRY[,2:11],MOM[,2:11],NI[,2:6],RESVAR[,2:6])
+
+
+#estimating betas for the 30 assets, run time series regression
+beta<-matrix(nrow = 30,ncol = 5) 
+colnames(beta)[1:5]<-colnames(FF5[2:6])
+rownames(beta)<-colnames(ASSETS[1:30])
+
+for (i in 1:30){
+  out<-lm(ASSETS[,i]~FF5$Mkt.RF+FF5$SMB+FF5$HML+FF5$RMW+FF5$CMA+FF5$CMA)
+  beta[i,]<-out$coefficients[1:5]
+}
+
+
+#run Fama MacBeth regression
+ASSETS_T<-t(ASSETS)
+ASSETS_T<-as.data.frame(ASSETS_T)
+beta<-as.data.frame(beta)
+
+riskpricing<-matrix(nrow=630,ncol = 6)
+colnames(riskpricing)[1]<-"intcpt"
+colnames(riskpricing)[2:6]<-colnames(FF5)[2:6]
+for (j in 1:630){
+  temp<-lm(ASSETS_T[,j]~beta$Mkt.RF+beta$SMB+beta$HML+beta$RMW+beta$CMA)
+  riskpricing[j,]<-temp$coefficients
+}
+
+#calculte risk pricing mean, var, r.sq
+riskpricingmean<-colMeans(riskpricing)
+riskpricingstd<-sqrt(diag(var(riskpricing)))
+
+mean.act<-colMeans(ASSETS)
+beta<-cbind(rep(1,30),beta)
+mean.pred<-as.matrix(beta)%*%as.vector(riskpricingmean)
+R.sq<-1-var(mean.act-mean.pred)/var(mean.act)
+R.sq
+
+
+rm(beta,out,R.sq,riskpricingmean,mean.act,mean.pred,i,j,temp,riskpricing)
+
+
+
+
+
+
+
+#b)
+#estimating betas for the 30 assets, run time series regression
+beta<-matrix(nrow = 30,ncol = 2) 
+colnames(beta)[1:2]<-c("intcpt","Mkt.RF")
+rownames(beta)<-colnames(ASSETS[1:30])
+
+for (i in 1:30){
+  out<-lm(ASSETS[,i]~FF5$Mkt.RF)
+  beta[i,]<-out$coefficients
+}
+
+#run Fama MacBeth regression
+beta<-as.data.frame(beta)
+
+riskpricing_2<-matrix(nrow=630,ncol = 3)
+colnames(riskpricing_2)[1]<-"intcpt"
+colnames(riskpricing_2)[2:3]<-c("lambda0","lambda1")
+for (j in 1:630){
+  temp<-lm(ASSETS_T[,j]~beta$intcpt+beta$Mkt.RF)
+  riskpricing_2[j,]<-temp$coefficients
+}
+
+#calculte risk pricing mean, var, r.sq
+riskpricing
+(riskpricing_2)
+riskpricingstd_2<-sqrt(diag(var(riskpricing_2)))
+
+mean.act<-colMeans(ASSETS)
+beta<-cbind(rep(1,30),beta)
+mean.pred<-as.matrix(beta)%*%as.vector(riskpricingmean)
+R.sq<-1-var(mean.act-mean.pred)/var(mean.act)
+R.sq
