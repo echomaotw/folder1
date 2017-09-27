@@ -1,0 +1,157 @@
+
+#project6
+#collateral with jump-diffusion 
+
+proj6=function(lambda1,lambda2,T){
+    v0=20000
+    L0=22000
+    dt=1/12
+    n=T/dt
+    u=-0.1
+    delta=0.25
+    gamma=-0.4
+    npath=10000
+    sigma=0.2
+    R0=0.02
+    epsilon=0.95
+    alpha=0.7
+    
+    beta=(epsilon-alpha)/T
+    seed=5
+    
+    #Jt follow a poission distribution
+    set.seed(seed)
+    J=matrix(rpois(n*npath,lambda1/12),nrow = npath, ncol = n,byrow = T)
+
+    #collateral value
+    v=matrix(NA,nrow = npath,ncol = n+1)
+    v[,1]=log(v0) #here
+    for (j in 2:(n+1)){
+        set.seed(100*j+30+seed);z1=rnorm(npath)
+        v[,j]=v[,j-1]+ (u-0.5*sigma^2)*dt + sigma*sqrt(dt)*z1 + log(1+gamma)*J[,j-1] #here
+    }
+    
+    #loan value
+    R=R0+delta*lambda2;r=R/12
+    pmt=L0*r/(1-1/(1+r)^(12*T))
+    a=pmt/r
+    b=pmt/r/(1+r)^(12*T)
+    c=1+r
+    L=matrix(NA,ncol=12*T+1,nrow = 1)
+    L[1]=L0
+    t=seq(1/12,T,by=1/12)
+    L[2:(n+1)]=unlist(lapply(t, function(x) (a-b*c^(x*12))) )   #
+    
+    #qt
+    q=matrix(NA,ncol = n+1); t=seq(0,T,by=1/12)
+    q=unlist(lapply(t, function(x) (alpha+beta*x)))
+    
+    #stopping time Q
+    Q=unlist(lapply(1:npath,function(x) min(which(exp(v[x,])<=q*L))))-1  #1-60 #here
+    
+    #stopping time S 1-60
+    set.seed(100*seed)
+    S.stopp=matrix(rpois(npath*n,lambda2/12),nrow = npath,ncol = 12*T,byrow = T)
+    S=apply(S.stopp,1, function(x) which(x>=1)[1])  ###here >=1
+    S[is.na(S)]=Inf
+    
+    QS=as.data.frame(cbind(Q,S))
+    for (i in 1:npath){
+        QS[i,"index"]=min(Q[i],S[i])
+        indx=QS[i,"index"]
+        if (QS[i,"index"]==Inf){
+            QS[i,"payoff"]=0   ###if not default, the option value is 0
+        }else{
+            if (Q[i]< S[i]) # here 
+              {
+                QS[i,"payoff"]=pmax(0,L[indx+1]-epsilon*exp(v[i,indx+1]))*exp(-R0/12*indx) #here
+              }else #here 
+              { 
+                QS[i,"payoff"]=abs(L[indx+1]-epsilon*exp(v[i,indx+1]))*exp(-R0/12*indx) #here
+              }
+        }
+    }
+    optionprice=mean(QS$payoff)
+    defaultprob=sum(QS$payoff!=0)/npath
+    expextime=mean(QS[QS$index!=Inf,"index"])/12
+    return(list(optionprice,defaultprob,expextime))
+}
+
+proj6(lambda1=0.2,lambda2=0.4,T=5)
+
+# a=mapply(function(x) (proj6(lambda1 = x,lambda2 = 0.4,T=5)), seq(0.05,0.4,0.05))
+# row.names(a)=c("option price","probability of default","exercise time")
+# colnames(a)=seq(0.05,0.4,0.05)
+# b=mapply(function(x) (proj6(lambda1 = 0.2,lambda2 = x,T=5)), seq(0,0.8,0.1))
+# row.names(b)=c("option price","probability of default","exercise time")
+# colnames(b)=seq(0,0.8,0.1)
+# c=mapply(function(x) (proj6(lambda1 = 0.2,lambda2 = 0.4,T=x)), seq(3,8,1))
+# row.names(c)=c("option price","probability of default","exercise time")
+# colnames(c)=seq(3,8,1)
+###################################################################################################################
+#plot
+par(mfrow=c(1,2), mar=c(3,4,4,2))
+
+lambda1=seq(0.05,0.4,0.05)
+lambda2=seq(0,0.8,0.1)
+output1=matrix(NA,nrow =9,ncol = 6 )
+for ( i in 1:9 ){
+    output1[i,]=unlist(mapply(function(x) (proj6(lambda1 = 0.2,lambda2 = lambda2[i],T=x)[1]), x=seq(3,8,1)))
+}
+
+plot(seq(3,8,1),output1[1,],type = "l",col=1,ylim = c(1000,6500),xlab = "T",ylab = "price",main = "lambda1=0.2")
+mapply(function(x) (lines(seq(3,8,1),output1[x,],type = "l",col=x)), 2:9)
+legend("bottomright",c(paste("lambda2=",seq(0,0.8,0.1))),col = c(1:9),pch = 16)
+
+#second plot
+output2=matrix(NA,nrow =8,ncol = 6 )
+for ( i in 1:8 ){
+    output2[i,]=unlist(mapply(function(x) (proj6(lambda1 = lambda1[i],lambda2 = 0.4,T=x)[1]), x=seq(3,8,1)))
+}
+
+plot(seq(3,8,1),output2[1,],type = "l",col=1,ylim = c(1000,6500),xlab = "T",ylab = "price",main = "lambda2=0.4")
+mapply(function(x) (lines(seq(3,8,1),output2[x,],type = "l",col=x)), 2:8)
+legend("bottomright",c(paste("lambda1=",seq(0.05,0.4,0.05))),col = c(1:8),pch = 16)
+
+##################################################################################################################
+par(mfrow=c(1,2), mar=c(3,4,4,2))
+output3=matrix(NA,nrow =9,ncol = 6 )
+for ( i in 1:9 ){
+    output3[i,]=unlist(mapply(function(x) (proj6(lambda1 = 0.2,lambda2 = lambda2[i],T=x)[2]), x=seq(3,8,1)))
+}
+
+plot(seq(3,8,1),output3[1,],type = "l",col=1,ylim = c(0,1.1),xlab = "T",ylab = "probability of default",main = "lambda1=0.2")
+mapply(function(x) (lines(seq(3,8,1),output3[x,],type = "l",col=x)), 2:9)
+legend("bottomright",c(paste("l2=",seq(0,0.8,0.1))),col = c(1:9),pch = 16)
+
+#second plot
+output4=matrix(NA,nrow =8,ncol = 6 )
+for ( i in 1:8 ){
+    output4[i,]=unlist(mapply(function(x) (proj6(lambda1 = lambda1[i],lambda2 = 0.4,T=x)[2]), x=seq(3,8,1)))
+}
+
+plot(seq(3,8,1),output4[1,],type = "l",col=1,ylim = c(0.5,1.1),xlab = "T",ylab = "probability of default",main = "lambda2=0.4")
+mapply(function(x) (lines(seq(3,8,1),output4[x,],type = "l",col=x)), 2:8)
+legend("bottomright",c(paste("l1=",seq(0.05,0.4,0.05))),col = c(1:8),pch = 16)
+
+##################################################################################################################
+par(mfrow=c(1,2), mar=c(3,4,4,2))
+output5=matrix(NA,nrow =9,ncol = 6 )
+for ( i in 1:9 ){
+    output5[i,]=unlist(mapply(function(x) (proj6(lambda1 = 0.2,lambda2 = lambda2[i],T=x)[3]), x=seq(3,8,1)))
+}
+
+plot(seq(3,8,1),output5[1,],type = "l",col=1,ylim = c(0.6,3),xlab = "T",ylab = "exercise time",main = "lambda1=0.2")
+mapply(function(x) (lines(seq(3,8,1),output5[x,],type = "l",col=x)), 2:9)
+legend("topright",c(paste("l2=",seq(0,0.8,0.1))),col = c(1:9),pch = 16)
+
+#second plot
+output6=matrix(NA,nrow =8,ncol = 6 )
+for ( i in 1:8 ){
+    output6[i,]=unlist(mapply(function(x) (proj6(lambda1 = lambda1[i],lambda2 = 0.4,T=x)[3]), x=seq(3,8,1)))
+}
+
+plot(seq(3,8,1),output6[1,],type = "l",col=1,ylim = c(0.6,3),xlab = "T",ylab = "excercise time",main = "lambda2=0.4")
+mapply(function(x) (lines(seq(3,8,1),output6[x,],type = "l",col=x)), 2:8)
+legend("topright",c(paste("l1=",seq(0.05,0.4,0.05))),col = c(1:8),pch = 16)
+
