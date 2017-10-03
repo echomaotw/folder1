@@ -1,0 +1,132 @@
+# -*- coding: utf-8 -*-
+"""
+@author: echom
+"""
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+###input fx data
+fx0=pd.read_csv(r'C:\Users\echom\OneDrive\python\DEXCAUS.csv',header=0,
+                skip_blank_lines=True, na_values='.',keep_default_na=True)
+fx0=fx0.dropna()
+fx_wodate=fx0.iloc[:,[1]]
+fx_wodate.head()
+plt.plot(fx_wodate)
+plt.show()
+
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import LSTM
+from keras.optimizers import SGD
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+
+###fix seed
+np.random.seed(0)
+
+###change data frame into array
+fx_scale=fx_wodate.values
+fx_scale=fx_scale.astype('float32')
+###normalize the dataset
+scaler=MinMaxScaler(feature_range=(0,1))
+fx_scale=scaler.fit_transform(fx_scale)
+plt.plot(fx_scale)
+plt.show()
+
+###split into train and test sets
+train_size=int(len(fx_scale)*0.7)
+test_size=len(fx_scale)-train_size
+train,test=fx_scale[0:train_size, :], fx_scale[train_size: len(fx_scale), :]
+print( len(train), len(test))
+
+###convert an array of values into a dataset matrix
+def create_dataset(dataset, lookback=2):
+    dataX, dataY=[],[]
+    for i in range(len(dataset)-lookback-1):
+        a=dataset[i:(i+lookback),0]
+        dataX.append(a)
+        dataY.append(dataset[i+lookback, 0])
+    return np.array(dataX), np.array(dataY)
+        
+lookback=2
+trainX, trainY=create_dataset(train, lookback)      
+testX, testY=  create_dataset(test, lookback) 
+###reshape input to be [samples, time steps, features]
+trainX = np.reshape(trainX, (trainX.shape[0], lookback, 1))
+testX = np.reshape(testX, (testX.shape[0], lookback, 1))
+###create and fit the LSTM network
+model=Sequential()
+model.add( LSTM(4, input_shape=(trainX.shape[1],trainX.shape[2] )) )
+model.add( Dense(1,activation='sigmoid'))
+sgd=SGD()
+model.compile(loss='mean_squared_error', optimizer='adam')
+#history=model.fit(trainX, trainY, validation_split=0.33, epochs=10, batch_size=100, verbose=2)
+history=model.fit(trainX, trainY, validation_data=(testX, testY), epochs=10, batch_size=100, verbose=2)
+
+
+###make predictions
+trainPredict=model.predict(trainX)
+testPredict=model.predict(testX)
+### invert predictions
+trainPredict=scaler.inverse_transform(trainPredict)
+trainY=scaler.inverse_transform([trainY])
+testPredict = scaler.inverse_transform(testPredict)
+testY = scaler.inverse_transform([testY])
+### calculate root mean squared error
+import math
+trainScore=math.sqrt(mean_squared_error(trainY[0],trainPredict[:,0]))
+testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:,0]))
+print('Test Score: %.2f RMSE' % testScore)
+
+#shift train predictions for plotting
+trainPredictPlot=np.empty_like(fx_wodate)
+trainPredictPlot[:,:]=np.nan
+trainPredictPlot[lookback:len(trainPredict)+lookback, :] = trainPredict
+# shift test predictions for plotting
+testPredictPlot = np.empty_like(fx_wodate)
+testPredictPlot[:, :] = np.nan
+testPredictPlot[len(trainPredict)+(lookback*2)+1:len(fx_wodate)-1, :] = testPredict
+# plot baseline and predictions
+plt.plot(fx_wodate)
+plt.plot(trainPredictPlot)
+plt.plot(testPredictPlot)
+plt.show()
+
+
+'''plot loss with epoch'''
+# list all data in history
+print(history.history.keys())
+# summarize history for loss
+plt.plot(history.history['loss'], color='blue')
+plt.plot(history.history['val_loss'], color='blue')
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+
+
+'''plot loss with epoch (multiple iteration)'''
+train_losses=pd.DataFrame()
+test_losses=pd.DataFrame()
+for i in range(5):
+    model=Sequential()
+    model.add( LSTM(4, input_shape=(trainX.shape[1],trainX.shape[2] ), activation='relu') )
+    model.add( Dense(1, activation='sigmoid'))
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    #history=model.fit(trainX, trainY, validation_split=0.33, epochs=10, batch_size=100, verbose=2)
+    history=model.fit(trainX, trainY, validation_data=(testX, testY), epochs=10, batch_size=100, verbose=2)
+    train_losses[str(i)]=history.history['loss']
+    test_losses[str(i)]=history.history['val_loss']
+    
+plt.plot(train_losses, color='blue', label='train')
+plt.plot(test_losses, color='orange', label='test')
+plt.title('model train vs test loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper right')
+plt.show()
+
+
+
